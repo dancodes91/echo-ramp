@@ -13,6 +13,8 @@ export class AdapterError extends Error {
 export const NOT_IMPLEMENTED =
   'Not implemented — awaiting vendor sandbox credentials';
 
+// ─── Routing layer (OTC / OpenFX) — quotes, orders, ramp/FX execution ────────
+
 export interface QuoteRequest {
   pair: string;
   direction: 'on_ramp' | 'off_ramp';
@@ -46,4 +48,18 @@ export interface RoutingAdapter {
   requestQuote(input: QuoteRequest): Promise<QuoteResponse>;
   submitOrder(input: OrderSubmission): Promise<OrderResponse>;
   getOrderStatus(providerOrderId: string): Promise<{ status: string }>;
+}
+
+// ─── BVNK — fiat rails and named accounts only ─────────────────────────────────
+
+export interface NamedAccountProvisionResult {
+  accountIdentifier: string;
+  currency: string;
+}
+
+export interface FiatRailsAdapter {
+  readonly provider: 'bvnk';
+  provisionNamedAccount(userId: string, currency: string): Promise<NamedAccountProvisionResult>;
+  getAccountDetails(accountIdentifier: string): Promise<{ accountIdentifier: string; currency: string }>;
+  handleFiatReceiptWebhook(_payload: unknown): Promise<void>;
 }

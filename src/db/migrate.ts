@@ -1,13 +1,13 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { closePool, getPool } from './client.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(__dirname, 'migrations');
 
-async function migrate(): Promise<void> {
+export async function runMigrations(options: { closePool?: boolean } = {}): Promise<void> {
   const pool = getPool();
 
   await pool.query(`
@@ -30,12 +30,10 @@ async function migrate(): Promise<void> {
     const version = file.replace('.sql', '');
 
     if (appliedVersions.has(version)) {
-      console.log(`Skipping ${file} (already applied)`);
       continue;
     }
 
     const sql = readFileSync(join(migrationsDir, file), 'utf-8');
-    console.log(`Applying ${file}...`);
 
     const client = await pool.connect();
     try {
@@ -46,7 +44,6 @@ async function migrate(): Promise<void> {
         [version],
       );
       await client.query('COMMIT');
-      console.log(`Applied ${file}`);
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -55,11 +52,20 @@ async function migrate(): Promise<void> {
     }
   }
 
-  await closePool();
-  console.log('Migrations complete.');
+  if (options.closePool) {
+    await closePool();
+  }
 }
 
-migrate().catch((err) => {
-  console.error('Migration failed:', err);
-  process.exit(1);
-});
+const isMainModule =
+  typeof process.argv[1] === 'string' &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMainModule) {
+  runMigrations({ closePool: true })
+    .then(() => console.log('Migrations complete.'))
+    .catch((err) => {
+      console.error('Migration failed:', err);
+      process.exit(1);
+    });
+}

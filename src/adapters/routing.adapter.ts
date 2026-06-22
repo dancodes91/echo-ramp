@@ -1,6 +1,4 @@
 import { config } from '../config/index.js';
-import { BvnkAdapter } from './bvnk.adapter.js';
-import { PalisadeAdapter } from './palisade.adapter.js';
 import {
   AdapterError,
   NOT_IMPLEMENTED,
@@ -43,27 +41,24 @@ class OpenFxAdapter implements RoutingAdapter {
   }
 }
 
-function createAdapter(): RoutingAdapter {
+function createRoutingAdapter(): RoutingAdapter {
   switch (config.ROUTING_PROVIDER) {
-    case 'bvnk':
-      return new BvnkAdapter();
     case 'ripple_otc':
       return new RippleOtcAdapter();
     case 'openfx':
       return new OpenFxAdapter();
-    case 'palisade':
-      return new PalisadeAdapter();
     default:
       throw new AdapterError(`Unknown routing provider: ${config.ROUTING_PROVIDER}`, 'routing');
   }
 }
 
+/** Ramp/FX execution — Ripple OTC desk or OpenFX. BVNK fiat rails are separate. */
 export class RoutingAdapterFactory {
   private static instance: RoutingAdapter | null = null;
 
   static getAdapter(): RoutingAdapter {
     if (!this.instance) {
-      this.instance = createAdapter();
+      this.instance = createRoutingAdapter();
     }
     return this.instance;
   }

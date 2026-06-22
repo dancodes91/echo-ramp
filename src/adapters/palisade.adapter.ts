@@ -1,26 +1,13 @@
-import {
-  AdapterError,
-  NOT_IMPLEMENTED,
-  OrderResponse,
-  OrderSubmission,
-  QuoteRequest,
-  QuoteResponse,
-  RoutingAdapter,
-} from './adapter.types.js';
+import { AdapterError, NOT_IMPLEMENTED } from './adapter.types.js';
 
-/** Interim fallback adapter — used only if primary routing partners are delayed. */
-export class PalisadeAdapter implements RoutingAdapter {
+/**
+ * Legacy Ripple MPC custody — not part of Ramp v1 non-custodial path.
+ * Retained as optional stub only; not wired into RoutingAdapter or fiat rails.
+ */
+export class PalisadeAdapter {
   readonly provider = 'palisade';
 
-  async requestQuote(_input: QuoteRequest): Promise<QuoteResponse> {
-    throw new AdapterError(NOT_IMPLEMENTED, this.provider);
-  }
-
-  async submitOrder(_input: OrderSubmission): Promise<OrderResponse> {
-    throw new AdapterError(NOT_IMPLEMENTED, this.provider);
-  }
-
-  async getOrderStatus(_providerOrderId: string): Promise<{ status: string }> {
+  async createWallet(_userId: string): Promise<{ walletId: string }> {
     throw new AdapterError(NOT_IMPLEMENTED, this.provider);
   }
 }

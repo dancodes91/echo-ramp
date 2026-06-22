@@ -1,5 +1,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
+import { config } from '../config/index.js';
+import { hashApiKey, verifyRequestSignature } from '../lib/crypto.js';
+import { integratorsRepo } from '../db/repositories/integrators.repo.js';
+
 export interface AuthenticatedIntegrator {
   integratorId: string;
   name: string;
@@ -23,6 +27,8 @@ const SERVER_PREFIX = '/v1/server';
 const CLIENT_PREFIX = '/v1/client';
 const WEBHOOK_PREFIX = '/v1/webhooks';
 
+const TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000;
+
 function isPublicRoute(url: string): boolean {
   return url === '/health' || url.startsWith(WEBHOOK_PREFIX);
 }
@@ -35,6 +41,10 @@ function isServerRoute(url: string): boolean {
   return url.startsWith(SERVER_PREFIX);
 }
 
+function normalizePath(url: string): string {
+  return url.split('?')[0] ?? url;
+}
+
 async function authenticateServerRequest(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -43,17 +53,58 @@ async function authenticateServerRequest(
   const signature = request.headers['x-signature'];
   const timestamp = request.headers['x-timestamp'];
 
-  if (!apiKey || !signature || !timestamp) {
+  if (!apiKey || typeof apiKey !== 'string') {
     return reply.status(401).send({
-      error: { code: 'unauthorized', message: 'Missing API key or HMAC signature headers' },
+      error: { code: 'unauthorized', message: 'Missing X-Api-Key header' },
     });
   }
 
-  // Phase 0: lookup integrator by API key hash — not yet wired to DB
+  const integrator = await integratorsRepo.findByApiKeyHash(hashApiKey(apiKey));
+  if (!integrator) {
+    return reply.status(401).send({
+      error: { code: 'unauthorized', message: 'Invalid API key' },
+    });
+  }
+
   request.integrator = {
-    integratorId: '00000000-0000-0000-0000-000000000000',
-    name: 'stub-integrator',
+    integratorId: integrator.id,
+    name: integrator.name,
   };
+
+  if (config.DEV_SKIP_HMAC && config.NODE_ENV !== 'production') {
+    return;
+  }
+
+  if (!signature || !timestamp || typeof signature !== 'string' || typeof timestamp !== 'string') {
+    return reply.status(401).send({
+      error: { code: 'unauthorized', message: 'Missing X-Signature or X-Timestamp header' },
+    });
+  }
+
+  const requestTime = Number(timestamp);
+  if (Number.isNaN(requestTime) || Math.abs(Date.now() - requestTime) > TIMESTAMP_TOLERANCE_MS) {
+    return reply.status(401).send({
+      error: { code: 'unauthorized', message: 'Request timestamp expired or invalid' },
+    });
+  }
+
+  const path = normalizePath(request.url);
+  const body = request.rawBody ?? '';
+
+  const valid = verifyRequestSignature(
+    integrator.apiSecret,
+    request.method,
+    path,
+    timestamp,
+    body,
+    signature,
+  );
+
+  if (!valid) {
+    return reply.status(401).send({
+      error: { code: 'unauthorized', message: 'Invalid request signature' },
+    });
+  }
 }
 
 async function authenticateClientRequest(
@@ -68,7 +119,7 @@ async function authenticateClientRequest(
     });
   }
 
-  // Phase 0: validate JWT/session token — not yet wired to DB
+  // Client session token validation — next phase
   request.session = {
     sessionId: '00000000-0000-0000-0000-000000000001',
     userId: '00000000-0000-0000-0000-000000000002',
@@ -79,7 +130,7 @@ async function authenticateClientRequest(
 
 export function registerAuthMiddleware(app: FastifyInstance): void {
   app.addHook('onRequest', async (request, reply) => {
-    const url = request.url.split('?')[0] ?? request.url;
+    const url = normalizePath(request.url);
 
     if (isPublicRoute(url)) {
       return;
@@ -92,6 +143,18 @@ export function registerAuthMiddleware(app: FastifyInstance): void {
 
     if (isServerRoute(url)) {
       await authenticateServerRequest(request, reply);
+    }
+  });
+}
+
+export function registerRawBodyParser(app: FastifyInstance): void {
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
+    request.rawBody = body as string;
+    try {
+      const parsed = body ? JSON.parse(body as string) : {};
+      done(null, parsed);
+    } catch (error) {
+      done(error as Error);
     }
   });
 }

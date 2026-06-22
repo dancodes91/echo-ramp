@@ -4,7 +4,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 
 import { config } from './config/index.js';
-import { registerAuthMiddleware } from './middleware/auth.js';
+import { registerAuthMiddleware, registerRawBodyParser } from './middleware/auth.js';
 import { registerIdempotencyMiddleware } from './middleware/idempotency.js';
 import { registerNonCustodyGuard } from './middleware/non-custody-guard.js';
 
@@ -43,6 +43,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     timeWindow: '1 minute',
   });
 
+  registerRawBodyParser(app);
   registerNonCustodyGuard(app);
   registerAuthMiddleware(app);
   registerIdempotencyMiddleware(app);

@@ -1,29 +1,32 @@
 import {
   AdapterError,
+  FiatRailsAdapter,
+  NamedAccountProvisionResult,
   NOT_IMPLEMENTED,
-  OrderResponse,
-  OrderSubmission,
-  QuoteRequest,
-  QuoteResponse,
-  RoutingAdapter,
 } from './adapter.types.js';
 
-export class BvnkAdapter implements RoutingAdapter {
-  readonly provider = 'bvnk';
+/** Fiat rails — named accounts and fiat receipt webhooks. Not used for ramp/FX quotes. */
+export class BvnkAdapter implements FiatRailsAdapter {
+  readonly provider = 'bvnk' as const;
 
-  async requestQuote(_input: QuoteRequest): Promise<QuoteResponse> {
+  async provisionNamedAccount(_userId: string, _currency: string): Promise<NamedAccountProvisionResult> {
     throw new AdapterError(NOT_IMPLEMENTED, this.provider);
   }
 
-  async submitOrder(_input: OrderSubmission): Promise<OrderResponse> {
+  async getAccountDetails(_accountIdentifier: string): Promise<{ accountIdentifier: string; currency: string }> {
     throw new AdapterError(NOT_IMPLEMENTED, this.provider);
   }
 
-  async getOrderStatus(_providerOrderId: string): Promise<{ status: string }> {
+  async handleFiatReceiptWebhook(_payload: unknown): Promise<void> {
     throw new AdapterError(NOT_IMPLEMENTED, this.provider);
   }
+}
 
-  async provisionNamedAccount(_userId: string, _currency: string): Promise<{ accountIdentifier: string }> {
-    throw new AdapterError(NOT_IMPLEMENTED, this.provider);
+let bvnkInstance: BvnkAdapter | null = null;
+
+export function getBvnkAdapter(): BvnkAdapter {
+  if (!bvnkInstance) {
+    bvnkInstance = new BvnkAdapter();
   }
+  return bvnkInstance;
 }

@@ -9,8 +9,16 @@ const envSchema = z.object({
   REDIS_URL: z.string().url().or(z.string().startsWith('redis://')).default('redis://localhost:6379'),
 
   HMAC_SECRET_SALT: z.string().min(1),
+  JWT_SECRET: z.string().min(1).optional(),
 
-  ROUTING_PROVIDER: z.enum(['bvnk', 'ripple_otc', 'openfx', 'palisade']).default('ripple_otc'),
+  /** Skip HMAC verification in development (API key still required). */
+  DEV_SKIP_HMAC: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  /** Ramp/FX execution: ripple_otc | openfx (BVNK is fiat rails only). */
+  ROUTING_PROVIDER: z.enum(['ripple_otc', 'openfx']).default('ripple_otc'),
 
   BVNK_API_KEY: z.string().optional(),
   SUMSUB_APP_TOKEN: z.string().optional(),
@@ -22,19 +30,24 @@ const envSchema = z.object({
   TRUELAYER_CLIENT_SECRET: z.string().optional(),
 });
 
-export type Config = z.infer<typeof envSchema>;
+export type Config = z.infer<typeof envSchema> & { JWT_SECRET: string };
 
 function loadConfig(): Config {
-  const result = envSchema.safeParse(process.env);
+  const parsed = envSchema.safeParse(process.env);
 
-  if (!result.success) {
-    const formatted = result.error.issues
+  if (!parsed.success) {
+    const formatted = parsed.error.issues
       .map((issue) => `  ${issue.path.join('.')}: ${issue.message}`)
       .join('\n');
     throw new Error(`Invalid environment configuration:\n${formatted}`);
   }
 
-  return result.data;
+  const config = parsed.data;
+
+  return {
+    ...config,
+    JWT_SECRET: config.JWT_SECRET ?? config.HMAC_SECRET_SALT,
+  };
 }
 
 export const config = loadConfig();

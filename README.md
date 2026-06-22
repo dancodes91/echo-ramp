@@ -8,8 +8,8 @@ Echo coordinates licensed third-party providers (BVNK, routing partners, Plaid, 
 
 - **Runtime:** Node.js 20+, TypeScript
 - **Framework:** Fastify
-- **Database:** PostgreSQL
-- **Cache / queue:** Redis (Phase 0 stub)
+- **Database:** PostgreSQL 16
+- **Cache / queue:** Redis (stub)
 
 ## Quick start
 
@@ -17,17 +17,53 @@ Echo coordinates licensed third-party providers (BVNK, routing partners, Plaid, 
 # Install dependencies
 npm install
 
-# Copy environment template and fill in values
+# Start Postgres + Redis
+npm run docker:up
+
+# Copy environment template
 cp .env.example .env
 
-# Run migrations
+# Migrate + seed dev integrator
 npm run migrate
+npm run seed
 
-# Start dev server (hot reload)
+# Or all-in-one
+npm run setup:dev
+
+# Start dev server
 npm run dev
 ```
 
-The API listens on `http://localhost:3000` by default.
+The API listens on `http://localhost:3000`.
+
+### Dev integrator credentials
+
+After `npm run seed`:
+
+| Variable | Value |
+|----------|-------|
+| API key | `echo_dev_api_key` |
+| API secret | `echo_dev_api_secret` |
+
+With `DEV_SKIP_HMAC=true` (default in `.env.example`), only `X-Api-Key` is required for local calls.
+
+### Example: create session
+
+```bash
+curl -X POST http://localhost:3000/v1/server/sessions \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: echo_dev_api_key" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "integrator_user_id": "cust_xyz",
+    "direction": "off_ramp",
+    "source_asset": "RLUSD",
+    "target_asset": "USD",
+    "amount": "25000.00",
+    "currency": "USD",
+    "corridor": "US"
+  }'
+```
 
 ### Route prefixes
 
@@ -37,12 +73,48 @@ The API listens on `http://localhost:3000` by default.
 | `/v1/client` | Widget BFF (Client API) |
 | `/v1/webhooks` | Inbound vendor webhooks |
 
+## Adapter layout
+
+| Adapter | Role |
+|---------|------|
+| `BvnkAdapter` | Fiat rails — named accounts, fiat webhooks |
+| `RoutingAdapter` | Ramp/FX — Ripple OTC desk or OpenFX (quotes/orders) |
+| `PalisadeAdapter` | Legacy custody stub — not used in v1 non-custodial path |
+
+Configure routing partner via `ROUTING_PROVIDER=ripple_otc|openfx`.
+
+## Design docs
+
+- [System Design](design/System%20Design.md)
+- [API Design](design/API%20Design.md)
+- [Database Design](design/Database%20Design.md)
+
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
 | `npm run dev` | Start with hot reload |
-| `npm run build` | Compile TypeScript to `dist/` |
+| `npm run build` | Compile TypeScript |
 | `npm start` | Run compiled output |
 | `npm run migrate` | Apply SQL migrations |
-| `npm test` | Run unit tests |
+| `npm run seed` | Seed dev integrator |
+| `npm run docker:up` | Start Postgres + Redis |
+| `npm run setup:dev` | Docker + migrate + seed |
+| `npm test` | Run integration tests |
+
+## Tests
+
+Requires Postgres running with `echo_ramp_test` database (created automatically by `docker/init-db.sql`):
+
+```bash
+npm run docker:up
+DATABASE_URL=postgresql://echo:echo@localhost:5432/echo_ramp_test npm run migrate
+npm test
+```
+
+## Phase status
+
+- Session create/get wired to PostgreSQL with idempotency
+- User upsert on session create
+- Client session token issued (JWT); validation on Client API — next
+- Quote/order services — stubbed until sandbox keys
