@@ -1,8 +1,8 @@
-# Echo Ramp v1
+# Echo Ramp v1.2
 
 Non-custodial on/off-ramp orchestration API for the Echo Ramp embeddable widget.
 
-Echo coordinates licensed third-party providers (BVNK, routing partners, Plaid, Sumsub, Chainalysis) but never holds user funds. All outbound bank and crypto movements are user-authenticated.
+Echo coordinates licensed third-party providers (Lydiam programme, BCB fiat rails, Plaid, Sumsub) but never holds user funds. All outbound bank and crypto movements are user-authenticated. Compliance screening and Travel Rule are handled by Lydiam — Echo submits KYC packs and routes all ramp activity via the programme.
 
 ## Stack
 
@@ -73,21 +73,23 @@ curl -X POST http://localhost:3000/v1/server/sessions \
 | `/v1/client` | Widget BFF (Client API) |
 | `/v1/webhooks` | Inbound vendor webhooks |
 
-## Adapter layout
+## Adapter layout (v1.2 Lydiam/BCB)
 
 | Adapter | Role |
 |---------|------|
-| `BvnkAdapter` | Fiat rails — named accounts, fiat webhooks |
-| `RoutingAdapter` | Ramp/FX — Ripple OTC desk or OpenFX (quotes/orders) |
+| `LydiamComplianceAdapter` | Compliance handoff — KYC/KYB pack to Lydiam programme |
+| `BcbAdapter` | Fiat rails — named virtual accounts, deposit webhooks |
+| `LydiamRoutingAdapter` | Ramp/FX — quotes and orders via Lydiam (no direct OTC bypass) |
 | `PalisadeAdapter` | Legacy custody stub — not used in v1 non-custodial path |
 
-Configure routing partner via `ROUTING_PROVIDER=ripple_otc|openfx`.
+Configure via `ROUTING_PROVIDER=lydiam` (default) and `FIAT_PROVIDER=bcb`.
 
 ## Design docs
 
 - [System Design](design/System%20Design.md)
 - [API Design](design/API%20Design.md)
 - [Database Design](design/Database%20Design.md)
+- [Architecture (repo root)](../RAMP_ARCHITECTURE_AND_FLOWS.md)
 
 ## Scripts
 
@@ -115,6 +117,8 @@ npm test
 ## Phase status
 
 - Session create/get wired to PostgreSQL with idempotency
-- User upsert on session create
-- Client session token issued (JWT); validation on Client API — next
-- Quote/order services — stubbed until sandbox keys
+- Lydiam/BCB adapter layer with stub implementations
+- Compliance handoff flow (Sumsub → pack → Lydiam)
+- BCB webhook inbox + deposit processor
+- Quote/order services via Lydiam routing with `compliance_pending` state
+- Off-ramp integration test with mocked adapters

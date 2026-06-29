@@ -133,7 +133,7 @@ Stores the current KYC state for a user. Each user has exactly one active KYC re
 ### 4.4 `user_wallets`
 
 
-Stores RLUSD wallet addresses provided by users. All addresses are screened via Chainalysis before use.
+Stores RLUSD wallet addresses provided by users. All addresses are screened via Lydiam/BCB (via programme routing) before use.
 
 
 | Column              | Type                     | Description                                      |
@@ -145,7 +145,7 @@ Stores RLUSD wallet addresses provided by users. All addresses are screened via 
 | `chain`             | `VARCHAR(10)`            | Default `'XRPL'`                                 |
 | `tag`               | `VARCHAR(20)`            | Destination tag (optional)                       |
 | `label`             | `VARCHAR(100)`           | User‑friendly label                              |
-| `screening_status`  | `ENUM('pending','approved','rejected')` | Chainalysis result           |
+| `compliance_status`  | `ENUM('pending','approved','rejected')` | Lydiam/BCB (via programme routing) result           |
 | `screened_at`       | `TIMESTAMPTZ`            |                                                  |
 | `created_at`        | `TIMESTAMPTZ`            |                                                  |
 | `updated_at`        | `TIMESTAMPTZ`            |                                                  |
@@ -154,7 +154,7 @@ Stores RLUSD wallet addresses provided by users. All addresses are screened via 
 **Unique constraint:** `uq_wallet_address_per_user_chain` on (`user_id`, `address_hash`, `chain`) — prevents duplicate registrations.
 
 
-**Indexes:** `idx_wallet_screening` on (`screening_status`) for compliance queue.
+**Indexes:** `idx_wallet_screening` on (`compliance_status`) for compliance queue.
 
 
 **Encryption:** `address` is encrypted using `pgcrypto` with a KMS‑backed key; `address_hash` enables lookups without decryption.
@@ -199,7 +199,7 @@ Virtual fiat accounts (vIBAN‑style) provisioned on Ripple fiat rails.
 |-----------------------|--------------------------|--------------------------------------------------|
 | `id`                  | `UUID PK`                |                                                  |
 | `user_id`             | `UUID FK` → `end_users.id` |                                                |
-| `provider`            | `VARCHAR(50)`            | `'bvnk'` (primary); `'palisade'` if fallback active |
+| `provider`            | `VARCHAR(50)`            | `'bcb'` (primary); `'palisade'` if fallback active |
 | `account_identifier`  | `VARCHAR(100)`           | vIBAN or similar unique identifier               |
 | `currency`            | `CHAR(3)`                | `'USD'`, `'EUR'`, `'GBP'`                        |
 | `status`              | `ENUM('active','closed')` |                                                  |
@@ -300,7 +300,7 @@ Created when a quote is accepted. Represents an OTC desk order.
 | `fiat_amount`           | `DECIMAL(30,8)`          |                                                  |
 | `crypto_amount`         | `DECIMAL(30,8)`          |                                                  |
 | `user_wallet_id`        | `UUID FK` → `user_wallets.id` | For on‑ramp: destination; off‑ramp: source  |
-| `routing_provider`      | `VARCHAR(50)`            | Which provider executed the order: `'bvnk'`, `'ripple_otc'`, `'openfx'`, `'palisade'` |
+| `routing_provider`      | `VARCHAR(50)`            | Which provider executed the order: `'bcb'`, `'ripple_otc'`, `'openfx'`, `'palisade'` |
 | `provider_deposit_address` | `TEXT`                | For off-ramp: counterparty address where user sends stablecoin from their own wallet (encrypted) |
 | `status`                | `ENUM('pending_submission','submitted','partially_filled','filled','failed','settled','cancelled')` | |
 | `tx_hash`               | `VARCHAR(255)`           | On‑chain RLUSD transaction hash (off‑ramp)       |
@@ -594,12 +594,12 @@ The database only stores the current state; invalid transitions are rejected by 
 ```sql
 SELECT s.state, s.direction,
        k.status AS kyc_status,
-       w.id AS wallet_id, w.screening_status,
+       w.id AS wallet_id, w.compliance_status,
        b.id AS bank_id, b.masked_account_number,
        n.id AS named_account_id
 FROM sessions s
 LEFT JOIN user_kyc k ON k.user_id = s.user_id
-LEFT JOIN user_wallets w ON w.user_id = s.user_id AND w.screening_status = 'approved'
+LEFT JOIN user_wallets w ON w.user_id = s.user_id AND w.compliance_status = 'approved'
 LEFT JOIN user_bank_links b ON b.user_id = s.user_id AND b.status = 'linked'
 LEFT JOIN user_named_fiat_accounts n ON n.user_id = s.user_id AND n.status = 'active'
 WHERE s.id = $1;

@@ -71,6 +71,24 @@ export class SessionsRepository {
     }
     return mapSession(result.rows[0]);
   }
+
+  async updateStateForUser(userId: string, state: SessionState): Promise<void> {
+    await query(
+      `UPDATE sessions SET state = $2, updated_at = NOW()
+       WHERE user_id = $1 AND state NOT IN ('completed', 'failed', 'cancelled')`,
+      [userId, state],
+    );
+  }
+
+  async findActiveByUserId(userId: string): Promise<EchoSession[]> {
+    const result = await query(
+      `SELECT * FROM sessions
+       WHERE user_id = $1 AND state NOT IN ('completed', 'failed', 'cancelled')
+       ORDER BY created_at DESC`,
+      [userId],
+    );
+    return result.rows.map(mapSession);
+  }
 }
 
 export const sessionsRepo = new SessionsRepository();

@@ -1,8 +1,8 @@
-import { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+﻿import { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import { signClientToken } from '../../lib/jwt.js';
-import { toCreateSessionResponse, toSessionDetailResponse } from '../../lib/session-response.js';
+import { toSessionDetailResponse } from '../../lib/session-response.js';
 import { SessionDirection } from '../../types/index.js';
 import { sessionService, SessionError } from '../../services/session.service.js';
 
@@ -116,3 +116,4 @@ declare module 'fastify' {
     idempotencyKey?: string;
   }
 }
+

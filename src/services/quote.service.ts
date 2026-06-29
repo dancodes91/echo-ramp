@@ -1,4 +1,7 @@
-import { EchoQuote, QuoteStatus } from '../types/index.js';
+import { getRoutingAdapter } from '../adapters/index.js';
+import { quotesRepo } from '../db/repositories/quotes.repo.js';
+import { sessionsRepo } from '../db/repositories/sessions.repo.js';
+import { EchoQuote, QuoteStatus, RoutingProvider, SessionState } from '../types/index.js';
 
 export interface RequestQuoteInput {
   sessionId: string;
@@ -8,24 +11,77 @@ export interface RequestQuoteInput {
 }
 
 export class QuoteService {
-  async requestQuote(_input: RequestQuoteInput): Promise<EchoQuote> {
-    throw new Error('Not implemented — Phase 0 stub');
+  async requestQuote(input: RequestQuoteInput): Promise<EchoQuote> {
+    const session = await sessionsRepo.findById(input.sessionId);
+    if (!session) {
+      throw new QuoteError('session_not_found', 'Session not found', 404);
+    }
+
+    await quotesRepo.expireStaleBySessionId(input.sessionId);
+
+    const routing = getRoutingAdapter();
+    const quoteResponse = await routing.requestQuote({
+      pair: input.pair,
+      direction: input.direction,
+      fiatAmount: input.fiatAmount,
+      corridor: session.corridor,
+    });
+
+    const quote = await quotesRepo.create({
+      sessionId: input.sessionId,
+      providerQuoteId: quoteResponse.providerQuoteId,
+      routingProvider: RoutingProvider.Lydiam,
+      pair: input.pair,
+      direction: input.direction,
+      deskRate: quoteResponse.deskRate,
+      feeEchoBps: 0,
+      feeIntegratorBps: 0,
+      totalRate: quoteResponse.deskRate,
+      fiatAmount: input.fiatAmount,
+      cryptoAmount: quoteResponse.cryptoAmount,
+      expiresAt: quoteResponse.expiresAt,
+      status: QuoteStatus.Ready,
+    });
+
+    await sessionsRepo.updateState(input.sessionId, SessionState.QuoteReady);
+    return quote;
   }
 
-  async acceptQuote(_quoteId: string): Promise<EchoQuote> {
-    throw new Error('Not implemented — Phase 0 stub');
+  async acceptQuote(quoteId: string, sessionId: string): Promise<EchoQuote> {
+    const quote = await quotesRepo.findById(quoteId);
+    if (!quote || quote.sessionId !== sessionId) {
+      throw new QuoteError('quote_not_found', 'Quote not found', 404);
+    }
+
+    if (!this.isQuoteValid(quote)) {
+      throw new QuoteError('quote_expired', 'Quote has expired', 410);
+    }
+
+    return quotesRepo.updateStatus(quoteId, QuoteStatus.Accepted);
   }
 
-  async getActiveQuote(_sessionId: string): Promise<EchoQuote | null> {
-    throw new Error('Not implemented — Phase 0 stub');
+  async getActiveQuote(sessionId: string): Promise<EchoQuote | null> {
+    await quotesRepo.expireStaleBySessionId(sessionId);
+    return quotesRepo.findActiveBySessionId(sessionId);
   }
 
-  async expireStaleQuotes(_sessionId: string): Promise<void> {
-    throw new Error('Not implemented — Phase 0 stub');
+  async expireStaleQuotes(sessionId: string): Promise<void> {
+    await quotesRepo.expireStaleBySessionId(sessionId);
   }
 
   isQuoteValid(quote: EchoQuote): boolean {
     return quote.status === QuoteStatus.Ready && quote.expiresAt > new Date();
+  }
+}
+
+export class QuoteError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly statusCode: number,
+  ) {
+    super(message);
+    this.name = 'QuoteError';
   }
 }
 

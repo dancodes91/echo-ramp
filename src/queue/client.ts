@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+﻿import { Redis } from 'ioredis';
 import { config } from '../config/index.js';
 
 let redis: Redis | null = null;
@@ -20,7 +20,6 @@ export async function closeRedis(): Promise<void> {
   }
 }
 
-/** Phase 0 stub — queue processors wired in later phases */
 export async function publishEvent(_channel: string, _payload: unknown): Promise<void> {
-  throw new Error('Not implemented — Phase 0 stub');
+  throw new Error('Not implemented — queue stub');
 }

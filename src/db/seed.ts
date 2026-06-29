@@ -1,4 +1,4 @@
-import { hashApiKey } from '../../lib/crypto.js';
+﻿import { hashApiKey } from '../lib/crypto.js';
 import { closePool, getPool } from './client.js';
 import { integratorsRepo } from './repositories/integrators.repo.js';
 import { pathToFileURL } from 'node:url';
@@ -48,3 +48,4 @@ if (isMainModule) {
     process.exit(1);
   });
 }
+

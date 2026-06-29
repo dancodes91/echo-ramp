@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+﻿import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
@@ -12,7 +12,23 @@ let app: FastifyInstance;
 
 async function resetDatabase(): Promise<void> {
   const pool = getPool();
-  await pool.query('TRUNCATE idempotency_keys, sessions, end_users, integrator_accounts CASCADE');
+  await pool.query(`
+    TRUNCATE
+      ledger_events,
+      webhook_inbox,
+      orders,
+      quotes,
+      user_wallets,
+      user_named_fiat_accounts,
+      compliance_submissions,
+      compliance_packs,
+      sumsub_kyc_profiles,
+      idempotency_keys,
+      sessions,
+      end_users,
+      integrator_accounts
+    CASCADE
+  `);
 }
 
 beforeAll(async () => {
@@ -26,7 +42,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  await app.close();
+  if (app) await app.close();
   await closePool();
 });
 
@@ -144,3 +160,4 @@ describe('dev integrator seed', () => {
     expect(result.rows[0]?.api_key_hash).toBe(hashApiKey(DEV_INTEGRATOR.apiKey));
   });
 });
+

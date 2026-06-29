@@ -157,13 +157,13 @@ Common error codes: `invalid_request`, `unauthorized`, `idempotency_key_reuse`, 
 ```
 
 
-### Named Fiat Account (BVNK)
+### Named Fiat Account (BCB (Lydiam programme))
 ```json
 {
   "id": "nfa_5g6h",
   "account_identifier": "US1234567890",
   "currency": "USD",
-  "provider": "bvnk"
+  "provider": "bcb"
 }
 ```
 
@@ -462,7 +462,7 @@ Body:
   "label": "My Main"
 }
 ```
-Returns wallet with screening status `pending`. Echo triggers Chainalysis screen asynchronously; widget can poll status.
+Returns wallet with screening status `pending`. Echo triggers Lydiam/BCB (via programme routing) screen asynchronously; widget can poll status.
 
 
 #### Get Wallet Screening Status
@@ -593,7 +593,7 @@ Body:
   "tx_hash": "ABC..."
 }
 ```
-Echo verifies the transaction on‑chain (via Chainalysis/XRPL node) and updates order status.
+Echo verifies the transaction on‑chain (via Lydiam/BCB (via programme routing)/XRPL node) and updates order status.
 
 #### Initiate User-Authenticated Bank Payout
 Once the routing provider has credited fiat to the user's named account, the widget presents the bank transfer instruction and the user completes it here. Echo returns a payment authorisation session; the user completes the transfer in the aggregator's flow.
@@ -751,7 +751,7 @@ The API is versioned via URL path (`/v1/...`). Breaking changes will be introduc
 | `idempotency_key_reuse` | 409 | Key reused with different body |
 | `session_expired` | 410 | Client token expired |
 | `kyc_required` | 403 | Action requires completed KYC |
-| `compliance_blocked` | 422 | Chainalysis or sanctions block |
+| `compliance_blocked` | 422 | Lydiam/BCB (via programme routing) or sanctions block |
 | `quote_expired` | 422 | Quote is no longer valid |
 | `insufficient_funds` | 422 | Bank or wallet balance too low |
 | `provider_unavailable` | 502 | Upstream provider failure |
@@ -773,7 +773,7 @@ The API is versioned via URL path (`/v1/...`). Breaking changes will be introduc
 7. User accepts quote. Widget calls `POST /client/quotes/{id}/accept` with the source wallet ID.
 8. Response includes `provider_deposit_address`. Widget displays it and instructs user to send exact stablecoin amount from their own wallet to that address.
 9. User sends from their own wallet. Widget calls `POST /client/orders/{id}/confirm-send` with the tx hash.
-10. Echo screens the inbound transaction (Chainalysis) and monitors the routing provider for fiat credit to the user's named BVNK account. Order moves to `filled`.
+10. Echo screens the inbound transaction (Lydiam/BCB (via programme routing)) and monitors the routing provider for fiat credit to the user's named BCB (Lydiam programme) account. Order moves to `filled`.
 11. Widget presents the bank transfer instruction. User calls `POST /client/orders/{id}/bank-payout` to open a user-authenticated payment session. Widget opens the Plaid (or equivalent) payment flow; user approves the bank transfer to their external account. Echo receives a status webhook from the aggregator and updates the order. Echo does not initiate the payout itself.
 12. Order moves to `completed`. Integrator backend receives `order.completed` webhook with revenue share. Reconciliation done.
 

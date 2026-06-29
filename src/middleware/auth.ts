@@ -2,7 +2,9 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
 import { config } from '../config/index.js';
 import { hashApiKey, verifyRequestSignature } from '../lib/crypto.js';
+import { verifyClientToken } from '../lib/jwt.js';
 import { integratorsRepo } from '../db/repositories/integrators.repo.js';
+import { sessionsRepo } from '../db/repositories/sessions.repo.js';
 
 export interface AuthenticatedIntegrator {
   integratorId: string;
@@ -119,13 +121,35 @@ async function authenticateClientRequest(
     });
   }
 
-  // Client session token validation — next phase
-  request.session = {
-    sessionId: '00000000-0000-0000-0000-000000000001',
-    userId: '00000000-0000-0000-0000-000000000002',
-    integratorId: '00000000-0000-0000-0000-000000000000',
-    clientTokenVersion: 1,
-  };
+  const token = authHeader.slice(7);
+
+  try {
+    const payload = await verifyClientToken(token);
+    const session = await sessionsRepo.findById(payload.sessionId);
+
+    if (!session) {
+      return reply.status(401).send({
+        error: { code: 'unauthorized', message: 'Session not found' },
+      });
+    }
+
+    if (session.clientTokenVersion !== payload.clientTokenVersion) {
+      return reply.status(401).send({
+        error: { code: 'unauthorized', message: 'Session token revoked' },
+      });
+    }
+
+    request.session = {
+      sessionId: payload.sessionId,
+      userId: payload.userId,
+      integratorId: payload.integratorId,
+      clientTokenVersion: payload.clientTokenVersion,
+    };
+  } catch {
+    return reply.status(401).send({
+      error: { code: 'unauthorized', message: 'Invalid session token' },
+    });
+  }
 }
 
 export function registerAuthMiddleware(app: FastifyInstance): void {

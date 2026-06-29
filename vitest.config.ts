@@ -12,7 +12,8 @@ export default defineConfig({
       HMAC_SECRET_SALT: 'test-secret',
       JWT_SECRET: 'test-jwt-secret',
       DEV_SKIP_HMAC: 'true',
-      ROUTING_PROVIDER: 'ripple_otc',
+      ROUTING_PROVIDER: 'lydiam',
+      FIAT_PROVIDER: 'bcb',
     },
   },
 });

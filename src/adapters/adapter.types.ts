@@ -13,7 +13,44 @@ export class AdapterError extends Error {
 export const NOT_IMPLEMENTED =
   'Not implemented — awaiting vendor sandbox credentials';
 
-// ─── Routing layer (OTC / OpenFX) — quotes, orders, ramp/FX execution ────────
+// ─── Compliance handoff — KYC/KYB pack to regulated partners ─────────────────
+
+export interface CompliancePack {
+  userId: string;
+  sumsubApplicantId: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  nationality: string;
+  addressLine1: string;
+  city: string;
+  postcode: string;
+  country: string;
+  documentType?: string;
+}
+
+export type ComplianceSubmissionStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'review';
+
+export interface ComplianceSubmissionResult {
+  submissionId: string;
+  partner: string;
+  externalRef: string | null;
+  status: ComplianceSubmissionStatus;
+}
+
+export interface ComplianceHandoffAdapter {
+  readonly partner: string;
+  submitPack(pack: CompliancePack): Promise<ComplianceSubmissionResult>;
+  getSubmissionStatus(submissionId: string): Promise<ComplianceSubmissionResult>;
+}
+
+// ─── Routing layer — quotes, orders via Lydiam programme ─────────────────────
+
+export type ComplianceCheckpointStatus = 'pending' | 'cleared' | 'rejected';
 
 export interface QuoteRequest {
   pair: string;
@@ -40,26 +77,57 @@ export interface OrderSubmission {
 export interface OrderResponse {
   providerOrderId: string;
   status: string;
-  providerDepositAddress?: string;
+  programmeDepositAddress?: string;
+  complianceStatus?: ComplianceCheckpointStatus;
+}
+
+export interface OrderStatusResponse {
+  status: string;
+  complianceStatus?: ComplianceCheckpointStatus;
 }
 
 export interface RoutingAdapter {
   readonly provider: string;
   requestQuote(input: QuoteRequest): Promise<QuoteResponse>;
   submitOrder(input: OrderSubmission): Promise<OrderResponse>;
-  getOrderStatus(providerOrderId: string): Promise<{ status: string }>;
+  getOrderStatus(providerOrderId: string): Promise<OrderStatusResponse>;
 }
 
-// ─── BVNK — fiat rails and named accounts only ─────────────────────────────────
+// ─── BCB — fiat rails and named virtual accounts ───────────────────────────────
+
+export interface VirtualAccountProvisionInput {
+  userId: string;
+  currency: string;
+  correlationId: string;
+  name: string;
+  dateOfBirth: string;
+  addressLine1: string;
+  city: string;
+  postcode: string;
+  country: string;
+  nationality: string;
+}
 
 export interface NamedAccountProvisionResult {
   accountIdentifier: string;
   currency: string;
+  correlationId: string;
+  status: 'pending' | 'active';
 }
 
 export interface FiatRailsAdapter {
-  readonly provider: 'bvnk';
-  provisionNamedAccount(userId: string, currency: string): Promise<NamedAccountProvisionResult>;
-  getAccountDetails(accountIdentifier: string): Promise<{ accountIdentifier: string; currency: string }>;
-  handleFiatReceiptWebhook(_payload: unknown): Promise<void>;
+  readonly provider: 'bcb';
+  provisionNamedAccount(
+    input: VirtualAccountProvisionInput,
+  ): Promise<NamedAccountProvisionResult>;
+  getAccountDetails(
+    accountIdentifier: string,
+  ): Promise<{ accountIdentifier: string; currency: string; status: string }>;
+  handleFiatReceiptWebhook(payload: unknown, signature: string | undefined): Promise<{
+    iban: string;
+    amount: string;
+    currency: string;
+    correlationId?: string;
+    transactionId: string;
+  }>;
 }

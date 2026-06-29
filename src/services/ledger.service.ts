@@ -1,3 +1,4 @@
+import { ledgerRepo } from '../db/repositories/ledger.repo.js';
 import { LedgerEvent, LedgerEventType } from '../types/index.js';
 
 export interface AppendLedgerEventInput {
@@ -11,12 +12,20 @@ export interface AppendLedgerEventInput {
 }
 
 export class LedgerService {
-  async appendEvent(_input: AppendLedgerEventInput): Promise<LedgerEvent> {
-    throw new Error('Not implemented — Phase 0 stub');
+  async appendEvent(input: AppendLedgerEventInput): Promise<LedgerEvent> {
+    return ledgerRepo.append({
+      sessionId: input.sessionId,
+      eventType: input.eventType,
+      asset: input.asset,
+      amount: input.amount,
+      counterparty: input.counterparty,
+      referenceId: input.referenceId ?? null,
+      metadata: input.metadata ?? {},
+    });
   }
 
-  async getEventsForSession(_sessionId: string): Promise<LedgerEvent[]> {
-    throw new Error('Not implemented — Phase 0 stub');
+  async getEventsForSession(sessionId: string): Promise<LedgerEvent[]> {
+    return ledgerRepo.findBySessionId(sessionId);
   }
 }
 

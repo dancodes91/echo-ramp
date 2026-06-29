@@ -1,4 +1,16 @@
-import { KycLevel, KycStatus, ScreeningStatus } from '../types/index.js';
+import { CompliancePack } from '../adapters/adapter.types.js';
+import { getComplianceHandoffAdapter } from '../adapters/index.js';
+import { getFiatRailsAdapter } from '../adapters/index.js';
+import { complianceRepo } from '../db/repositories/compliance.repo.js';
+import { namedAccountsRepo } from '../db/repositories/named-accounts.repo.js';
+import { sessionsRepo } from '../db/repositories/sessions.repo.js';
+import {
+  ComplianceSubmissionStatus,
+  KycLevel,
+  KycStatus,
+  NamedAccountStatus,
+  SessionState,
+} from '../types/index.js';
 
 export interface KycRecord {
   userId: string;
@@ -9,19 +21,181 @@ export interface KycRecord {
 
 export class ComplianceService {
   async initiateKyc(_userId: string, _level: KycLevel): Promise<{ accessToken: string; applicantId: string }> {
-    throw new Error('Not implemented — Phase 0 stub');
+    throw new Error('Not implemented — awaiting Sumsub sandbox credentials');
   }
 
-  async getKycStatus(_userId: string): Promise<KycRecord | null> {
-    throw new Error('Not implemented — Phase 0 stub');
+  async getKycStatus(userId: string): Promise<KycRecord | null> {
+    const profile = await complianceRepo.findKycProfileByUserId(userId);
+    if (!profile) {
+      return null;
+    }
+    return {
+      userId: profile.userId,
+      level: profile.level,
+      status: profile.status,
+      sumsubApplicantId: profile.sumsubApplicantId,
+    };
   }
 
-  async screenWallet(_address: string, _chain: string): Promise<ScreeningStatus> {
-    throw new Error('Not implemented — Phase 0 stub');
+  async buildCompliancePack(userId: string): Promise<CompliancePack> {
+    const profile = await complianceRepo.findKycProfileByUserId(userId);
+    if (!profile || profile.status !== KycStatus.Approved) {
+      throw new ComplianceError('kyc_not_approved', 'KYC must be approved before building compliance pack', 422);
+    }
+
+    const snapshot = profile.rawSnapshot;
+    const fixedInfo = (snapshot.fixedInfo ?? snapshot.info ?? {}) as Record<string, string>;
+
+    return {
+      userId,
+      sumsubApplicantId: profile.sumsubApplicantId,
+      firstName: fixedInfo.firstName ?? snapshot.firstName ?? 'Unknown',
+      lastName: fixedInfo.lastName ?? snapshot.lastName ?? 'Unknown',
+      dateOfBirth: fixedInfo.dob ?? snapshot.dob ?? '1970-01-01',
+      nationality: fixedInfo.nationality ?? snapshot.nationality ?? 'US',
+      addressLine1: fixedInfo.addressLine1 ?? snapshot.addressLine1 ?? '',
+      city: fixedInfo.city ?? snapshot.city ?? '',
+      postcode: fixedInfo.postcode ?? snapshot.postcode ?? '',
+      country: fixedInfo.country ?? snapshot.country ?? 'US',
+      documentType: snapshot.documentType as string | undefined,
+    };
   }
 
-  async handleKycWebhook(_payload: unknown): Promise<void> {
-    throw new Error('Not implemented — Phase 0 stub');
+  async submitToPartner(userId: string, partner = 'lydiam'): Promise<{
+    packId: string;
+    submissionId: string;
+    status: ComplianceSubmissionStatus;
+  }> {
+    const pack = await this.buildCompliancePack(userId);
+    const packRecord = await complianceRepo.createPack(userId, pack);
+
+    const adapter = getComplianceHandoffAdapter(partner);
+    const result = await adapter.submitPack(pack);
+
+    const submission = await complianceRepo.createSubmission({
+      packId: packRecord.id,
+      userId,
+      partner: result.partner,
+      externalRef: result.externalRef,
+      status: result.status as ComplianceSubmissionStatus,
+    });
+
+    await this.advanceSessionsForUser(userId, SessionState.ComplianceHandoffPending);
+
+    if (result.status === 'approved') {
+      await complianceRepo.updateSubmissionStatus(submission.id, ComplianceSubmissionStatus.Approved);
+      await this.advanceSessionsForUser(userId, SessionState.ComplianceHandoffOk);
+      await this.provisionNamedAccountIfNeeded(userId, pack);
+    }
+
+    return {
+      packId: packRecord.id,
+      submissionId: submission.id,
+      status: result.status as ComplianceSubmissionStatus,
+    };
+  }
+
+  async provisionNamedAccountIfNeeded(userId: string, pack: CompliancePack): Promise<void> {
+    const existing = await namedAccountsRepo.findByUserId(userId);
+    if (existing?.status === NamedAccountStatus.Active) {
+      return;
+    }
+
+    await this.advanceSessionsForUser(userId, SessionState.NamedAccountPending);
+
+    const correlationId = `echo-${userId.slice(0, 8)}`;
+    const fiatAdapter = getFiatRailsAdapter();
+
+    try {
+      const result = await fiatAdapter.provisionNamedAccount({
+        userId,
+        currency: 'USD',
+        correlationId,
+        name: `${pack.firstName} ${pack.lastName}`,
+        dateOfBirth: pack.dateOfBirth,
+        addressLine1: pack.addressLine1,
+        city: pack.city,
+        postcode: pack.postcode,
+        country: pack.country,
+        nationality: pack.nationality,
+      });
+
+      if (existing) {
+        await namedAccountsRepo.updateStatus(
+          existing.id,
+          result.status === 'active' ? NamedAccountStatus.Active : NamedAccountStatus.Pending,
+          result.accountIdentifier || undefined,
+        );
+      } else {
+        await namedAccountsRepo.create({
+          userId,
+          accountIdentifier: result.accountIdentifier,
+          currency: result.currency,
+          bcbCorrelationId: result.correlationId,
+          status: result.status === 'active' ? NamedAccountStatus.Active : NamedAccountStatus.Pending,
+        });
+      }
+
+      if (result.status === 'active') {
+        await this.advanceSessionsForUser(userId, SessionState.BankLinkRequired);
+      }
+    } catch {
+      // BCB credentials not configured — remain in named_account_pending
+    }
+  }
+
+  async handleKycWebhook(payload: unknown): Promise<void> {
+    const body = payload as {
+      type?: string;
+      applicantId?: string;
+      externalUserId?: string;
+      reviewResult?: { reviewAnswer?: string };
+      applicant?: { id?: string; externalUserId?: string };
+    };
+
+    if (body.type !== 'applicantReviewed' && body.type !== 'applicantWorkflowCompleted') {
+      return;
+    }
+
+    const reviewAnswer = body.reviewResult?.reviewAnswer;
+    if (reviewAnswer !== 'GREEN') {
+      return;
+    }
+
+    const userId = body.externalUserId ?? body.applicant?.externalUserId;
+    const applicantId = body.applicantId ?? body.applicant?.id;
+
+    if (!userId || !applicantId) {
+      throw new ComplianceError('invalid_webhook', 'Missing userId or applicantId in Sumsub webhook', 400);
+    }
+
+    await complianceRepo.upsertKycProfile({
+      userId,
+      sumsubApplicantId: applicantId,
+      status: KycStatus.Approved,
+      rawSnapshot: body as Record<string, unknown>,
+    });
+
+    await sessionsRepo.updateStateForUser(userId, SessionState.KycOk);
+    await this.submitToPartner(userId);
+  }
+
+  private async advanceSessionsForUser(userId: string, state: SessionState): Promise<void> {
+    const sessions = await sessionsRepo.findActiveByUserId(userId);
+    for (const session of sessions) {
+      await sessionsRepo.updateState(session.id, state);
+    }
+  }
+}
+
+export class ComplianceError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly statusCode: number,
+  ) {
+    super(message);
+    this.name = 'ComplianceError';
   }
 }
 

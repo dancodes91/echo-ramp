@@ -21,7 +21,7 @@ import { clientOrderRoutes } from './api/client/orders.js';
 import { clientTransferRoutes } from './api/client/transfers.js';
 
 import { sumsubWebhookRoutes } from './api/webhooks/sumsub.js';
-import { bvnkWebhookRoutes } from './api/webhooks/bvnk.js';
+import { bcbWebhookRoutes } from './api/webhooks/bcb.js';
 import { bankAggregatorWebhookRoutes } from './api/webhooks/bank-aggregator.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -67,7 +67,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(clientTransferRoutes, { prefix: '/v1/client/transfers' });
 
   await app.register(sumsubWebhookRoutes, { prefix: '/v1/webhooks/sumsub' });
-  await app.register(bvnkWebhookRoutes, { prefix: '/v1/webhooks/bvnk' });
+  await app.register(bcbWebhookRoutes, { prefix: '/v1/webhooks/bcb' });
   await app.register(bankAggregatorWebhookRoutes, { prefix: '/v1/webhooks/bank-aggregator' });
 
   return app;

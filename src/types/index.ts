@@ -4,11 +4,15 @@ export enum SessionState {
   Created = 'created',
   KycRequired = 'kyc_required',
   KycOk = 'kyc_ok',
+  ComplianceHandoffPending = 'compliance_handoff_pending',
+  ComplianceHandoffOk = 'compliance_handoff_ok',
+  NamedAccountPending = 'named_account_pending',
   BankLinkRequired = 'bank_link_required',
   WalletRequired = 'wallet_required',
   QuoteRequested = 'quote_requested',
   QuoteReady = 'quote_ready',
   OrderPending = 'order_pending',
+  CompliancePending = 'compliance_pending',
   OrderFilled = 'order_filled',
   Completed = 'completed',
   Failed = 'failed',
@@ -24,6 +28,7 @@ export enum SessionDirection {
 export enum OrderStatus {
   PendingSubmission = 'pending_submission',
   Submitted = 'submitted',
+  CompliancePending = 'compliance_pending',
   PartiallyFilled = 'partially_filled',
   Filled = 'filled',
   Failed = 'failed',
@@ -50,11 +55,34 @@ export enum KycStatus {
   Rejected = 'rejected',
 }
 
+export enum ComplianceSubmissionStatus {
+  Pending = 'pending',
+  Approved = 'approved',
+  Rejected = 'rejected',
+  Review = 'review',
+}
+
+export enum ComplianceCheckpointStatus {
+  Pending = 'pending',
+  Cleared = 'cleared',
+  Rejected = 'rejected',
+}
+
 export enum RoutingProvider {
-  Bvnk = 'bvnk',
+  Lydiam = 'lydiam',
+  Bcb = 'bcb',
   RippleOtc = 'ripple_otc',
   OpenFx = 'openfx',
-  Palisade = 'palisade',
+}
+
+export enum IntegratorWebhookEvent {
+  Created = 'created',
+  QuoteReady = 'quote_ready',
+  QuoteAccepted = 'quote_accepted',
+  CompliancePending = 'compliance_pending',
+  StatusChange = 'status_change',
+  Completed = 'completed',
+  Failed = 'failed',
 }
 
 export enum AssetType {
@@ -70,12 +98,6 @@ export enum IntegratorStatus {
 export enum EndUserStatus {
   Active = 'active',
   Blocked = 'blocked',
-}
-
-export enum ScreeningStatus {
-  Pending = 'pending',
-  Approved = 'approved',
-  Rejected = 'rejected',
 }
 
 export enum BankLinkStatus {
@@ -95,8 +117,16 @@ export enum LedgerEventType {
   FiatWithdrawal = 'fiat_withdrawal',
   CryptoDeposit = 'crypto_deposit',
   CryptoWithdrawal = 'crypto_withdrawal',
+  OffRamp = 'off_ramp',
+  OnRamp = 'on_ramp',
   Fee = 'fee',
   StateChange = 'state_change',
+}
+
+export enum NamedAccountStatus {
+  Pending = 'pending',
+  Active = 'active',
+  Closed = 'closed',
 }
 
 // ─── Core domain interfaces ──────────────────────────────────────────────────
@@ -123,7 +153,8 @@ export interface EchoSession {
 export interface EchoQuote {
   id: string;
   sessionId: string;
-  deskQuoteId: string | null;
+  providerQuoteId: string | null;
+  routingProvider: RoutingProvider;
   pair: string;
   direction: 'on_ramp' | 'off_ramp';
   deskRate: string;
@@ -142,13 +173,14 @@ export interface EchoOrder {
   id: string;
   sessionId: string;
   quoteId: string | null;
-  deskOrderId: string | null;
+  providerOrderId: string | null;
   direction: 'on_ramp' | 'off_ramp';
   fiatAmount: string;
   cryptoAmount: string;
   userWalletId: string | null;
   routingProvider: RoutingProvider | null;
-  providerDepositAddress: string | null;
+  complianceStatus: ComplianceCheckpointStatus | null;
+  programmeDepositAddress: string | null;
   status: OrderStatus;
   txHash: string | null;
   filledAt: Date | null;
@@ -198,6 +230,37 @@ export interface EndUser {
   integratorId: string;
   integratorUserId: string;
   status: EndUserStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CompliancePackRecord {
+  id: string;
+  userId: string;
+  pack: Record<string, unknown>;
+  version: number;
+  createdAt: Date;
+}
+
+export interface ComplianceSubmission {
+  id: string;
+  packId: string;
+  userId: string;
+  partner: string;
+  externalRef: string | null;
+  status: ComplianceSubmissionStatus;
+  submittedAt: Date;
+  resolvedAt: Date | null;
+}
+
+export interface NamedFiatAccount {
+  id: string;
+  userId: string;
+  accountIdentifier: string;
+  currency: string;
+  provider: string;
+  bcbCorrelationId: string;
+  status: NamedAccountStatus;
   createdAt: Date;
   updatedAt: Date;
 }

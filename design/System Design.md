@@ -11,7 +11,7 @@
 ## 1. Introduction
 
 
-Echo Ramp v1 is a non-custodial fiat-to-stablecoin ramp orchestration platform. It enables partner platforms (integrators) to embed an iframe/JS widget that allows their end-users to convert between fiat (via bank accounts) and stablecoins (RLUSD primary; USDC/USDT where routing partner and corridor support it), using BVNK for fiat rails and named accounts, and a configurable routing layer (Ripple OTC desk, OpenFX, and equivalents) for ramp/FX execution. Echo never holds user funds; it orchestrates identity, compliance, banking, and settlement while assets remain in user-owned bank accounts and wallets. Every outbound bank movement is initiated under the user's own authentication — Echo presents instructions in the widget but does not technically execute them.
+Echo Ramp v1 is a non-custodial fiat-to-stablecoin ramp orchestration platform. It enables partner platforms (integrators) to embed an iframe/JS widget that allows their end-users to convert between fiat (via bank accounts) and stablecoins (RLUSD primary; USDC/USDT where routing partner and corridor support it), using BCB (Lydiam programme) for fiat rails and named accounts, and a configurable routing layer (Ripple OTC desk, OpenFX, and equivalents) for ramp/FX execution. Echo never holds user funds; it orchestrates identity, compliance, banking, and settlement while assets remain in user-owned bank accounts and wallets. Every outbound bank movement is initiated under the user's own authentication — Echo presents instructions in the widget but does not technically execute them.
 
 
 ### Core Principles
@@ -35,7 +35,7 @@ Echo Ramp consists of three layers:
 |-------|-------------|-------|
 | **Embed Layer** | iframe + JS SDK for widget; hosts UI flows (amount input, KYC, quote, wallet capture) | Echo (widget team) |
 | **Orchestration Layer** | Backend microservices that coordinate sessions, quotes, orders, compliance, ledger, and integrator API | Echo (platform team) |
-| **Provider Layer** | BVNK (fiat rails + named accounts), routing layer (Ripple OTC desk / OpenFX — pending partner sign-off; Palisade as interim fallback), bank aggregators, Sumsub, Chainalysis | Vendors, accessed via adapters |
+| **Provider Layer** | BCB (Lydiam programme) (fiat rails + named accounts), routing layer (Lydiam routing (BCB FIX / desk TBC) — pending partner sign-off; Palisade as interim fallback), bank aggregators, Sumsub, Lydiam/BCB (via programme routing) | Vendors, accessed via adapters |
 
 
 ```mermaid
@@ -62,12 +62,12 @@ graph TD
 
 
     subgraph Providers
-        BVNK[BVNK Fiat Rails and Named Accounts]
+        BCB (Lydiam programme)[BCB (Lydiam programme) Fiat Rails and Named Accounts]
         RoutingLayer["Routing Layer (Ripple OTC / OpenFX)"]
         Palisade[Palisade Fallback]
         BankAgg[Plaid / TrueLayer / Tink / Volt]
         Sumsub[Sumsub KYC]
-        Chainalysis[Chainalysis Screening]
+        Lydiam/BCB (via programme routing)[Lydiam/BCB (via programme routing) Screening]
     end
 
 
@@ -88,15 +88,15 @@ graph TD
     ComplianceSvc --> AdapterLayer
     LedgerSvc --> DB
     WebhookSvc --> MQ
-    AdapterLayer --> BVNK
+    AdapterLayer --> BCB (Lydiam programme)
     AdapterLayer --> RoutingLayer
     AdapterLayer -.-> Palisade
     AdapterLayer --> BankAgg
     AdapterLayer --> Sumsub
-    AdapterLayer --> Chainalysis
+    AdapterLayer --> Lydiam/BCB (via programme routing)
     BankAgg -.-> UserBank
     RoutingLayer -.-> UserWallet
-    BVNK -.-> UserBank
+    BCB (Lydiam programme) -.-> UserBank
 ```
 
 
@@ -122,7 +122,7 @@ The platform is entirely stateless; persistent state lives in PostgreSQL. Asynch
 
 
 ### 3.3 Quote Service
-- Requests quotes from the routing adapter (BVNK or configured routing partner — Ripple OTC desk, OpenFX, etc.).
+- Requests quotes from the routing adapter (BCB (Lydiam programme) or configured routing partner — Ripple OTC desk, OpenFX, etc.).
 - Caches quotes with expiry (Redis).
 - Returns quote to widget with breakdown: provider rate, Echo fee, integrator revenue share, total, validity window.
 - Handles quote expiry and rejection flows.
@@ -130,7 +130,7 @@ The platform is entirely stateless; persistent state lives in PostgreSQL. Asynch
 
 ### 3.4 Order Service
 - Accepts user‑confirmed orders.
-- Submits order to the routing adapter (BVNK or configured partner).
+- Submits order to the routing adapter (BCB (Lydiam programme) or configured partner).
 - Monitors fill status via polling/webhook from adapter.
 - On fill: records ledger entry and presents fiat movement instruction in the widget for the user to authorise. Echo does not instruct outbound bank movements on the user's behalf.
 
@@ -138,20 +138,20 @@ The platform is entirely stateless; persistent state lives in PostgreSQL. Asynch
 ### 3.5 Compliance Engine
 - **KYC:** Calls Sumsub adapter for tiered identity verification (level based on ticket size).
 - **Sanctions/PEP:** Integrated with Sumsub.
-- **Chainalysis:** Screens every stablecoin wallet address (user and counterparty) and on‑chain transaction.
-- **Travel Rule:** Not handled by Echo. Echo operates as orchestration-only, non-custodial technology; TR responsibility sits with the licensed provider partners (BVNK, routing desk) who execute money movement.
+- **Lydiam/BCB (via programme routing):** Screens every stablecoin wallet address (user and counterparty) and on‑chain transaction.
+- **Travel Rule:** Not handled by Echo. Echo operates as orchestration-only, non-custodial technology; TR responsibility sits with the licensed provider partners (BCB (Lydiam programme), routing desk) who execute money movement.
 - All KYC and screening checks must pass before a quote can be accepted or an order can progress.
 
 
 ### 3.6 Adapter Layer
 - Abstraction for all third‑party integrations.
 - Each adapter is a separate module with clear interfaces:
-  - `RoutingAdapter`: quote, order, status, settlement reconciliation. Routes to BVNK, Ripple OTC desk, or OpenFX based on corridor/size config. Active provider is recorded on each order.
-  - `BvnkAdapter`: provision named fiat accounts (vIBAN-style), fetch account details, fiat receipt webhooks.
-  - `PalisadeAdapter`: stub adapter for interim fallback if BVNK is delayed (Sam holds existing contract); activated by config flag.
+  - `RoutingAdapter`: quote, order, status, settlement reconciliation. Routes to BCB (Lydiam programme), Ripple OTC desk, or OpenFX based on corridor/size config. Active provider is recorded on each order.
+  - `BcbAdapter`: provision named fiat accounts (vIBAN-style), fetch account details, fiat receipt webhooks.
+  - `PalisadeAdapter`: stub adapter for interim fallback if BCB (Lydiam programme) is delayed (Sam holds existing contract); activated by config flag.
   - `BankAggregatorAdapter`: return payment authorisation session (Plaid Link token, TrueLayer redirect, etc.) for the user to complete. Receives status webhooks only — does not initiate outbound payments on Echo's behalf.
   - `SumsubAdapter`: KYC applicant creation, status polling, webhook consumption.
-  - `ChainalysisAdapter`: address screening, transaction screening.
+  - `Lydiam/BCB (via programme routing)Adapter`: address screening, transaction screening.
 - Adapters handle retries, circuit breaking, and vendor‑specific errors.
 
 
@@ -200,7 +200,7 @@ sequenceDiagram
     participant OrderSvc
     participant ComplianceSvc
     participant RoutingAdapter
-    participant BvnkAdapter
+    participant BcbAdapter
     participant BankAgg as BankAggregator
     participant Ledger
 
@@ -230,11 +230,11 @@ sequenceDiagram
     Note over User,Widget: User sends stablecoin from their own wallet — Echo does not move crypto
     User->>RoutingAdapter: send stablecoin on-chain from own wallet
     Widget->>APIGW: POST /client/orders/{id}/confirm-send (tx_hash)
-    OrderSvc->>ComplianceSvc: screen inbound tx (Chainalysis)
+    OrderSvc->>ComplianceSvc: screen inbound tx (Lydiam/BCB (via programme routing))
     alt screening passes
         RoutingAdapter->>OrderSvc: fill confirmation (webhook)
-        OrderSvc->>BvnkAdapter: verify fiat credit to named account
-        BvnkAdapter-->>OrderSvc: confirmed
+        OrderSvc->>BcbAdapter: verify fiat credit to named account
+        BcbAdapter-->>OrderSvc: confirmed
         OrderSvc->>Ledger: OFF_RAMP event
         OrderSvc-->>Widget: fiat in named account; present bank transfer instruction
         Note over User,Widget: User authenticates bank transfer out — Echo presents instruction only
@@ -248,7 +248,7 @@ sequenceDiagram
 
 
 ### 4.2 On‑ramp (fiat → stablecoin)
-Similar flow but in reverse. User authenticates a push payment from their external bank to their named BVNK account via the bank aggregator (Plaid etc.) — user initiates, Echo presents the instruction. The routing provider converts fiat to stablecoin and sends to the user-specified wallet address. Echo monitors confirmation and records the `ON_RAMP` ledger event.
+Similar flow but in reverse. User authenticates a push payment from their external bank to their named BCB (Lydiam programme) account via the bank aggregator (Plaid etc.) — user initiates, Echo presents the instruction. The routing provider converts fiat to stablecoin and sends to the user-specified wallet address. Echo monitors confirmation and records the `ON_RAMP` ledger event.
 
 
 ### 4.3 RLUSD wallet‑to‑wallet (internal transfer)
@@ -322,15 +322,15 @@ Similar flow but in reverse. User authenticates a push payment from their extern
 
 | Provider | API Docs | Adapter Responsibility | Status |
 |----------|----------|------------------------|--------|
-| BVNK | TBD (Sam) | Fiat rails, named account provisioning, fiat receipt webhooks | Pending partner sign-off |
+| BCB (Lydiam programme) | TBD (Sam) | Fiat rails, named account provisioning, fiat receipt webhooks | Pending partner sign-off |
 | Ripple OTC desk | TBD (Sam) | Quotes, orders, ramp/FX execution (via `RoutingAdapter`) | Pending sign-off; routed via config |
 | OpenFX | TBD | Regulated FX execution (alternative routing path) | Pending sign-off |
-| Palisade | https://docs.ripple.com/products/wallet/api-docs/palisade-api/palisade-api/api-credentials | Interim fallback adapter if BVNK delayed; Sam holds existing contract | Fallback only |
+| Palisade | https://docs.ripple.com/products/wallet/api-docs/palisade-api/palisade-api/api-credentials | Interim fallback adapter if BCB (Lydiam programme) delayed; Sam holds existing contract | Fallback only |
 | Plaid | https://plaid.com/docs/api/ | Bank link + payment authorisation session for user-initiated payments | v1 US |
 | TrueLayer / Volt | https://docs.truelayer.com/ | Bank link + payment auth session, UK (Faster Payments) | v1 UK |
 | Tink / Volt | TBD | Bank link + payment auth session, EU (SEPA Instant) | v1 EU |
 | Sumsub | https://docs.sumsub.com/ | KYC (tiered), sanctions/PEP screening | v1 |
-| Chainalysis | https://auth-developers.chainalysis.com/ | Address and transaction screening (every on-chain leg) | v1 |
+| Lydiam/BCB (via programme routing) | https://auth-developers.chainalysis.com/ | Address and transaction screening (every on-chain leg) | v1 |
 
 
 ---
@@ -343,19 +343,19 @@ Similar flow but in reverse. User authenticates a push payment from their extern
    - API Gateway, Integrator API (session, basic webhooks), Ledger service, DB schema.
    - Enforce non‑custody and user-initiated outbound invariants in code.
 2. **Phase 1 – Fiat rails + off‑ramp (USD)**  
-   - `BvnkAdapter` (or `PalisadeAdapter` as fallback if BVNK not yet signed).
-   - `RoutingAdapter` with first routing partner (Ripple OTC desk or BVNK ramp) — added after partner sign-off.
+   - `BcbAdapter` (or `PalisadeAdapter` as fallback if BCB (Lydiam programme) not yet signed).
+   - `RoutingAdapter` with first routing partner (Ripple OTC desk or BCB (Lydiam programme) ramp) — added after partner sign-off.
    - Quote/Order services, Plaid adapter (user-initiated bank payment sessions).
    - Sumsub integration (tiered KYC).
    - Off‑ramp flow end‑to‑end with user-authenticated bank payout.
 3. **Phase 2 – On‑ramp (USD)**  
    - User-authenticated bank push; stablecoin delivered to user wallet.
-4. **Phase 3 – Internal stablecoin transfers + Chainalysis**  
+4. **Phase 3 – Internal stablecoin transfers + Lydiam/BCB (via programme routing)**  
    - Wallet‑to‑wallet flow, address screening.
 5. **Phase 4 – Routing partners (OpenFX + additional)**  
    - Additional routing paths live after partner sign-off; `RoutingAdapter` selects by config.
 6. **Phase 5 – Multi‑corridor (EUR/GBP)**  
-   - TrueLayer/Tink adapters, EUR/GBP named accounts via BVNK.
+   - TrueLayer/Tink adapters, EUR/GBP named accounts via BCB (Lydiam programme).
 7. **Phase 6 – Admin & operations tooling**  
    - Admin console, manual intervention, reconciliation tools.
 

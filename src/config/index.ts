@@ -11,19 +11,27 @@ const envSchema = z.object({
   HMAC_SECRET_SALT: z.string().min(1),
   JWT_SECRET: z.string().min(1).optional(),
 
-  /** Skip HMAC verification in development (API key still required). */
   DEV_SKIP_HMAC: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
 
-  /** Ramp/FX execution: ripple_otc | openfx (BVNK is fiat rails only). */
-  ROUTING_PROVIDER: z.enum(['ripple_otc', 'openfx']).default('ripple_otc'),
+  FIAT_PROVIDER: z.enum(['bcb']).default('bcb'),
 
-  BVNK_API_KEY: z.string().optional(),
+  /** Ramp/FX via Lydiam programme (ripple_otc/openfx only if behind Lydiam — TBC). */
+  ROUTING_PROVIDER: z.enum(['lydiam', 'ripple_otc', 'openfx']).default('lydiam'),
+
+  BCB_BASE_URL: z.string().url().default('https://api.uat.bcb.group'),
+  BCB_CLIENT_ID: z.string().optional(),
+  BCB_CLIENT_SECRET: z.string().optional(),
+  BCB_ACCOUNT_ID: z.string().optional(),
+  BCB_WEBHOOK_SECRET: z.string().optional(),
+
+  LYDIAM_API_BASE_URL: z.string().url().optional(),
+  LYDIAM_API_KEY: z.string().optional(),
+
   SUMSUB_APP_TOKEN: z.string().optional(),
   SUMSUB_SECRET_KEY: z.string().optional(),
-  CHAINALYSIS_API_KEY: z.string().optional(),
   PLAID_CLIENT_ID: z.string().optional(),
   PLAID_SECRET: z.string().optional(),
   TRUELAYER_CLIENT_ID: z.string().optional(),

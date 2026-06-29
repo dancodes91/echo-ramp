@@ -4,6 +4,13 @@ export function deriveRequiredActions(state: SessionState): string[] {
   switch (state) {
     case SessionState.KycRequired:
       return ['kyc'];
+    case SessionState.ComplianceHandoffPending:
+      return ['submit_compliance_pack'];
+    case SessionState.ComplianceHandoffOk:
+    case SessionState.NamedAccountPending:
+      return ['provision_named_account'];
+    case SessionState.CompliancePending:
+      return ['await_compliance_clearance'];
     case SessionState.BankLinkRequired:
       return ['bank_link'];
     case SessionState.WalletRequired:
