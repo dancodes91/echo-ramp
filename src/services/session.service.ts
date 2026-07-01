@@ -3,6 +3,8 @@ import { signClientToken } from '../lib/jwt.js';
 import { inferCorridor, initialSessionState, toCreateSessionResponse } from '../lib/session-response.js';
 import { sessionsRepo } from '../db/repositories/sessions.repo.js';
 import { usersRepo } from '../db/repositories/users.repo.js';
+import { TransitionReason } from '../domain/session-state-machine.js';
+import { sessionStateMachine } from './session-state-machine.service.js';
 
 export interface CreateSessionInput {
   integratorId: string;
@@ -100,8 +102,12 @@ export class SessionService {
     return { session, integratorUserId: user.integratorUserId };
   }
 
-  async transitionState(sessionId: string, newState: SessionState): Promise<EchoSession> {
-    return sessionsRepo.updateState(sessionId, newState);
+  async transitionState(
+    sessionId: string,
+    newState: SessionState,
+    reason: TransitionReason = 'manual_admin',
+  ): Promise<EchoSession> {
+    return sessionStateMachine.transition(sessionId, newState, reason);
   }
 }
 

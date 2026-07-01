@@ -3,7 +3,7 @@ import { getComplianceHandoffAdapter } from '../adapters/index.js';
 import { getFiatRailsAdapter } from '../adapters/index.js';
 import { complianceRepo } from '../db/repositories/compliance.repo.js';
 import { namedAccountsRepo } from '../db/repositories/named-accounts.repo.js';
-import { sessionsRepo } from '../db/repositories/sessions.repo.js';
+import { sessionStateMachine } from './session-state-machine.service.js';
 import {
   ComplianceSubmissionStatus,
   KycLevel,
@@ -80,11 +80,21 @@ export class ComplianceService {
       status: result.status as ComplianceSubmissionStatus,
     });
 
-    await this.advanceSessionsForUser(userId, SessionState.ComplianceHandoffPending);
+    await sessionStateMachine.transitionEligibleSessionsForUser(
+      userId,
+      SessionState.ComplianceHandoffPending,
+      'compliance_pack_submitted',
+      (s) => s.state === SessionState.KycOk,
+    );
 
     if (result.status === 'approved') {
       await complianceRepo.updateSubmissionStatus(submission.id, ComplianceSubmissionStatus.Approved);
-      await this.advanceSessionsForUser(userId, SessionState.ComplianceHandoffOk);
+      await sessionStateMachine.transitionEligibleSessionsForUser(
+        userId,
+        SessionState.ComplianceHandoffOk,
+        'compliance_partner_approved',
+        (s) => s.state === SessionState.ComplianceHandoffPending,
+      );
       await this.provisionNamedAccountIfNeeded(userId, pack);
     }
 
@@ -98,10 +108,21 @@ export class ComplianceService {
   async provisionNamedAccountIfNeeded(userId: string, pack: CompliancePack): Promise<void> {
     const existing = await namedAccountsRepo.findByUserId(userId);
     if (existing?.status === NamedAccountStatus.Active) {
+      await sessionStateMachine.transitionEligibleSessionsForUser(
+        userId,
+        SessionState.BankLinkRequired,
+        'named_account_active',
+        (s) => s.state === SessionState.NamedAccountPending,
+      );
       return;
     }
 
-    await this.advanceSessionsForUser(userId, SessionState.NamedAccountPending);
+    await sessionStateMachine.transitionEligibleSessionsForUser(
+      userId,
+      SessionState.NamedAccountPending,
+      'named_account_provision_started',
+      (s) => s.state === SessionState.ComplianceHandoffOk,
+    );
 
     const correlationId = `echo-${userId.slice(0, 8)}`;
     const fiatAdapter = getFiatRailsAdapter();
@@ -137,7 +158,12 @@ export class ComplianceService {
       }
 
       if (result.status === 'active') {
-        await this.advanceSessionsForUser(userId, SessionState.BankLinkRequired);
+        await sessionStateMachine.transitionEligibleSessionsForUser(
+          userId,
+          SessionState.BankLinkRequired,
+          'named_account_active',
+          (s) => s.state === SessionState.NamedAccountPending,
+        );
       }
     } catch {
       // BCB credentials not configured — remain in named_account_pending
@@ -176,15 +202,13 @@ export class ComplianceService {
       rawSnapshot: body as Record<string, unknown>,
     });
 
-    await sessionsRepo.updateStateForUser(userId, SessionState.KycOk);
+    await sessionStateMachine.transitionEligibleSessionsForUser(
+      userId,
+      SessionState.KycOk,
+      'kyc_webhook_approved',
+      (s) => s.state === SessionState.KycRequired,
+    );
     await this.submitToPartner(userId);
-  }
-
-  private async advanceSessionsForUser(userId: string, state: SessionState): Promise<void> {
-    const sessions = await sessionsRepo.findActiveByUserId(userId);
-    for (const session of sessions) {
-      await sessionsRepo.updateState(session.id, state);
-    }
   }
 }
 

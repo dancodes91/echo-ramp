@@ -2,10 +2,12 @@ import { getRoutingAdapter } from '../../adapters/index.js';
 import { LydiamRoutingAdapter } from '../../adapters/routing.adapter.js';
 import { ordersRepo } from '../../db/repositories/orders.repo.js';
 import { sessionsRepo } from '../../db/repositories/sessions.repo.js';
+import { sessionStateMachine } from '../../services/session-state-machine.service.js';
 import { webhookDispatcherService } from '../../services/webhook-dispatcher.service.js';
 import {
   ComplianceCheckpointStatus,
   OrderStatus,
+  SessionDirection,
   SessionState,
 } from '../../types/index.js';
 
@@ -21,6 +23,7 @@ export async function processOrderStatusUpdate(payload: OrderStatusPayload): Pro
 
   const routing = getRoutingAdapter();
   const status = await routing.getOrderStatus(order.providerOrderId);
+  const session = await sessionsRepo.findById(order.sessionId);
 
   if (status.complianceStatus === 'cleared') {
     await ordersRepo.updateComplianceStatus(
@@ -29,7 +32,6 @@ export async function processOrderStatusUpdate(payload: OrderStatusPayload): Pro
       OrderStatus.Submitted,
     );
 
-    const session = await sessionsRepo.findById(order.sessionId);
     if (session) {
       await webhookDispatcherService.dispatch(session.integratorId, {
         eventType: 'status_change',
@@ -44,14 +46,14 @@ export async function processOrderStatusUpdate(payload: OrderStatusPayload): Pro
       ComplianceCheckpointStatus.Rejected,
       OrderStatus.Failed,
     );
-    await sessionsRepo.updateState(order.sessionId, SessionState.Failed);
-  } else if (status.status === 'filled') {
+    await sessionStateMachine.transition(order.sessionId, SessionState.Failed, 'compliance_rejected');
+  } else if (status.status === 'filled' && session?.direction === SessionDirection.OnRamp) {
     await ordersRepo.updateComplianceStatus(
       order.id,
       ComplianceCheckpointStatus.Cleared,
       OrderStatus.Filled,
     );
-    await sessionsRepo.updateState(order.sessionId, SessionState.OrderFilled);
+    await sessionStateMachine.transition(order.sessionId, SessionState.OrderFilled, 'order_filled');
   }
 }
 

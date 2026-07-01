@@ -61,6 +61,9 @@ export class SessionsRepository {
     return mapSession(result.rows[0]);
   }
 
+  /**
+   * @internal Only SessionStateMachineService should call this directly.
+   */
   async updateState(id: string, state: SessionState): Promise<EchoSession> {
     const result = await query(
       `UPDATE sessions SET state = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
@@ -72,6 +75,9 @@ export class SessionsRepository {
     return mapSession(result.rows[0]);
   }
 
+  /**
+   * @internal Deprecated — use SessionStateMachineService.transitionEligibleSessionsForUser.
+   */
   async updateStateForUser(userId: string, state: SessionState): Promise<void> {
     await query(
       `UPDATE sessions SET state = $2, updated_at = NOW()

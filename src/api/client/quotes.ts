@@ -1,7 +1,8 @@
 ﻿import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 
 import { sessionsRepo } from '../../db/repositories/sessions.repo.js';
-import { QuoteError, quoteService } from '../../services/quote.service.js';
+import { SessionStateError } from '../../errors/session-state.error.js';
+import { QuoteError, mapSessionStateError, quoteService } from '../../services/quote.service.js';
 
 export const clientQuoteRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.post('/', async (request, reply) => {
@@ -43,6 +44,12 @@ export const clientQuoteRoutes: FastifyPluginAsync = async (app: FastifyInstance
           error: { code: err.code, message: err.message },
         });
       }
+      if (err instanceof SessionStateError) {
+        const mapped = mapSessionStateError(err);
+        return reply.status(mapped.statusCode).send({
+          error: { code: mapped.code, message: mapped.message },
+        });
+      }
       throw err;
     }
   });
@@ -65,6 +72,12 @@ export const clientQuoteRoutes: FastifyPluginAsync = async (app: FastifyInstance
       if (err instanceof QuoteError) {
         return reply.status(err.statusCode).send({
           error: { code: err.code, message: err.message },
+        });
+      }
+      if (err instanceof SessionStateError) {
+        const mapped = mapSessionStateError(err);
+        return reply.status(mapped.statusCode).send({
+          error: { code: mapped.code, message: mapped.message },
         });
       }
       throw err;

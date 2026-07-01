@@ -1,6 +1,8 @@
 import { getRoutingAdapter } from '../adapters/index.js';
 import { quotesRepo } from '../db/repositories/quotes.repo.js';
 import { sessionsRepo } from '../db/repositories/sessions.repo.js';
+import { SessionStateError } from '../errors/session-state.error.js';
+import { sessionStateMachine } from './session-state-machine.service.js';
 import { EchoQuote, QuoteStatus, RoutingProvider, SessionState } from '../types/index.js';
 
 export interface RequestQuoteInput {
@@ -18,6 +20,20 @@ export class QuoteService {
     }
 
     await quotesRepo.expireStaleBySessionId(input.sessionId);
+
+    if (session.state === SessionState.QuoteReady) {
+      await sessionStateMachine.transition(
+        input.sessionId,
+        SessionState.QuoteRequested,
+        'quote_requested',
+      );
+    } else if (session.state !== SessionState.QuoteRequested) {
+      await sessionStateMachine.transition(
+        input.sessionId,
+        SessionState.QuoteRequested,
+        'quote_requested',
+      );
+    }
 
     const routing = getRoutingAdapter();
     const quoteResponse = await routing.requestQuote({
@@ -43,7 +59,7 @@ export class QuoteService {
       status: QuoteStatus.Ready,
     });
 
-    await sessionsRepo.updateState(input.sessionId, SessionState.QuoteReady);
+    await sessionStateMachine.transition(input.sessionId, SessionState.QuoteReady, 'quote_created');
     return quote;
   }
 
@@ -83,6 +99,10 @@ export class QuoteError extends Error {
     super(message);
     this.name = 'QuoteError';
   }
+}
+
+export function mapSessionStateError(err: SessionStateError): QuoteError {
+  return new QuoteError(err.code, err.message, err.statusCode);
 }
 
 export const quoteService = new QuoteService();

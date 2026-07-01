@@ -2,6 +2,7 @@ import { getRoutingAdapter } from '../adapters/index.js';
 import { ordersRepo } from '../db/repositories/orders.repo.js';
 import { quotesRepo } from '../db/repositories/quotes.repo.js';
 import { sessionsRepo } from '../db/repositories/sessions.repo.js';
+import { sessionStateMachine } from './session-state-machine.service.js';
 import { webhookDispatcherService } from './webhook-dispatcher.service.js';
 import {
   ComplianceCheckpointStatus,
@@ -69,7 +70,7 @@ export class OrderService {
       failureReason: null,
     });
 
-    await sessionsRepo.updateState(input.sessionId, SessionState.CompliancePending);
+    await sessionStateMachine.transition(input.sessionId, SessionState.CompliancePending, 'order_submitted');
 
     await webhookDispatcherService.dispatch(input.integratorId, {
       eventType: 'compliance_pending',

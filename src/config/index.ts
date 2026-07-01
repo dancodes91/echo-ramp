@@ -36,6 +36,11 @@ const envSchema = z.object({
   PLAID_SECRET: z.string().optional(),
   TRUELAYER_CLIENT_ID: z.string().optional(),
   TRUELAYER_CLIENT_SECRET: z.string().optional(),
+
+  RELAX_STATE_GUARDS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 });
 
 export type Config = z.infer<typeof envSchema> & { JWT_SECRET: string };

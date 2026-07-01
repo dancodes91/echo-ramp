@@ -1,6 +1,8 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 
+import { SessionStateError } from '../../errors/session-state.error.js';
 import { OrderError, orderService } from '../../services/order.service.js';
+import { mapSessionStateError } from '../../services/quote.service.js';
 
 export const clientOrderRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   app.post('/', async (request, reply) => {
@@ -35,6 +37,12 @@ export const clientOrderRoutes: FastifyPluginAsync = async (app: FastifyInstance
       if (err instanceof OrderError) {
         return reply.status(err.statusCode).send({
           error: { code: err.code, message: err.message },
+        });
+      }
+      if (err instanceof SessionStateError) {
+        const mapped = mapSessionStateError(err);
+        return reply.status(mapped.statusCode).send({
+          error: { code: mapped.code, message: mapped.message },
         });
       }
       throw err;

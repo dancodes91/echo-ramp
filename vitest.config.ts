@@ -14,6 +14,7 @@ export default defineConfig({
       DEV_SKIP_HMAC: 'true',
       ROUTING_PROVIDER: 'lydiam',
       FIAT_PROVIDER: 'bcb',
+      RELAX_STATE_GUARDS: 'true',
     },
   },
 });
